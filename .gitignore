@@ -3,3 +3,4 @@ build/
 *.exe
 *.dll
 *.log
+!font.png

@@ -272,6 +272,26 @@ static void utf8_pop_back(std::string& s) {
     if (i > 0) --i;
     s.erase(i);
 }
+
+// Пытается найти и загрузить шрифт из папки рядом с exe.
+// Проверяет по очереди: font.png, font.gif, font.bmp, font.jpg, font.jpeg
+static bool autoLoadDefaultFont() {
+    const char* candidates[] = {
+        "font.png", "font.gif", "font.bmp", "font.jpg", "font.jpeg",
+        "FONT.PNG", "FONT.GIF", "FONT.BMP"
+    };
+    for (const char* name : candidates) {
+        FILE* f = fopen(name, "rb");
+        if (f) {
+            fclose(f);
+            log_msg(std::string("Auto-loading default font: ") + name);
+            if (loadFont(name)) return true;
+        }
+    }
+    log_msg("No default font found in program directory");
+    return false;
+}
+
 static uint32_t utf8_next(const std::string& s, size_t& i) {
     if (i >= s.size()) return 0;
     unsigned char c = (unsigned char)s[i];
@@ -1522,7 +1542,13 @@ int main(int argc, char** argv) {
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
     SDL_EventState(SDL_TEXTINPUT, SDL_ENABLE);
 
-    if (argc > 1) loadFont(argv[1]);
+        if (argc > 1) {
+        // Аргумент командной строки
+        loadFont(argv[1]);
+    } else {
+        // Нет аргумента — пробуем авто-загрузку из папки
+        autoLoadDefaultFont();
+    }
 
     bool running = true;
     SDL_Event e;
