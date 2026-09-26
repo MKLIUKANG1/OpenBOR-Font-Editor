@@ -1,7 +1,6 @@
 // main.cpp — OpenBOR Font Editor
-// Defaults: charW=8 charH=8 first=0 spacing=0 scale=3
-// Прозрачность: только магента (r>200, b>200, g<80)
-// Окно Help/About по клавише H
+// Redesign: тулбар, боковая панель настроек, живой ввод текста,
+// hover-подсветка символа, прокрутка листа, аккуратный статусбар
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <SDL2/SDL_ttf.h>
@@ -34,12 +33,11 @@ static void log_msg(const std::string& s) {
 }
 
 // ==================================================================
-//                     МАГИЧЕСКИЙ ЦВЕТ (как в первой версии)
+//                     МАГИЧЕСКИЙ ЦВЕТ
 // ==================================================================
 static bool isMagicPixel(Uint8 r, Uint8 g, Uint8 b) {
     return r > 200 && b > 200 && g < 80;
 }
-
 static SDL_Surface* makeTransparentSurface(SDL_Surface* src) {
     if (!src) return nullptr;
     SDL_Surface* dst = SDL_ConvertSurfaceFormat(src, SDL_PIXELFORMAT_RGBA32, 0);
@@ -62,7 +60,7 @@ static SDL_Surface* makeTransparentSurface(SDL_Surface* src) {
 }
 
 // ==================================================================
-//                ДИАЛОГИ ОТКРЫТИЯ / СОХРАНЕНИЯ
+//                     ДИАЛОГИ
 // ==================================================================
 #ifdef _WIN32
 static std::string openFileDialogW() {
@@ -112,48 +110,61 @@ enum Lang { LANG_EN = 0, LANG_RU = 1 };
 static Lang g_lang = LANG_EN;
 
 struct UIStr {
-    std::string title, no_image, preview, type_hint;
-    std::string text_dialog_title, text_dialog_hint;
+    std::string title, no_image;
+    std::string btn_open, btn_save_png, btn_save_gif, btn_save_pcx;
+    std::string btn_paint, btn_help, btn_lang;
+    std::string settings_title;
+    std::string set_charw, set_charh, set_first, set_spacing, set_scale;
+    std::string preview_title, input_hint;
+    std::string help_title, help_hotkeys, help_about, help_close;
+    std::string about_text;
     std::string paint_hint;
     std::string tool_pencil, tool_eraser, tool_fill, tool_picker;
     std::string apply, cancel, undo, transparent;
-    std::string status_hint, lang_tag;
-    std::string help_title, help_hotkeys, help_about, help_close;
-    std::string about_text;
+    std::string status_no_file, status_file;
+    std::string hover_none;
+    std::string reset_defaults;
 };
+
 static const UIStr STR_EN = {
     "OpenBOR Font Editor",
-    "No image loaded.  Ctrl+O: open   Drag&Drop: also works",
-    "PREVIEW",
-    "T: type test text   Enter: apply   Esc: cancel",
-    "TEST TEXT",
-    "Enter: apply   Esc: cancel   Shift+Enter: new line",
-    "LMB: draw   RMB: menu   Alt+LMB: pick   Wheel: zoom   Ctrl+Z: undo",
-    "Pencil","Eraser","Fill","Picker","APPLY","CANCEL","UNDO","(transparent)",
-    "H: help   L: lang   T: text   E: paint   RMB: menu   Ctrl+O: open   Ctrl+S: save",
-    "EN",
+    "No image loaded. Drag&Drop a font image or click [ Open ]",
+    "Open","Save PNG","Save GIF","Save PCX",
+    "Paint","Help","EN",
+    "SETTINGS",
+    "Char width","Char height","First code","Spacing","Scale",
+    "LIVE PREVIEW","Type here...",
     "HELP",
     "HOTKEYS",
     "ABOUT",
-    "Close (H / Esc)",
-    "OpenBOR Font Editor is a tool for creating and editing bitmap fonts for the OpenBOR engine. Supports indexed PNG / GIF / PCX saving, sprite editor, live preview and Russian / English UI.||Created by MKLIUKANG1."
+    "Close (Esc)",
+    "OpenBOR Font Editor v1.1 — a bitmap font editor for the OpenBOR engine.||Features: toolbar, side settings panel, live text preview, sprite editor, indexed PNG/GIF/PCX save, English/Russian UI.||Created by MKLIUKANG1.",
+    "LMB: draw   RMB: menu   Alt+LMB: pick   Wheel: zoom   Ctrl+Z: undo",
+    "Pencil","Eraser","Fill","Picker",
+    "APPLY","CANCEL","UNDO","(transparent)",
+    "no file loaded","file",
+    "hover a cell to see its code",
+    "Reset defaults"
 };
 static const UIStr STR_RU = {
     "OpenBOR редактор шрифтов",
-    "Изображение не загружено.  Ctrl+O: открыть   Можно перетащить файл",
-    "ПРЕДПРОСМОТР",
-    "T: печать текста   Enter: применить   Esc: отмена",
-    "ТЕСТОВЫЙ ТЕКСТ",
-    "Enter: применить   Esc: отмена   Shift+Enter: новая строка",
-    "ЛКМ: рисовать   ПКМ: меню   Alt+ЛКМ: пипетка   Колесо: zoom   Ctrl+Z: отмена",
-    "Карандаш","Ластик","Заливка","Пипетка","ПРИМЕНИТЬ","ОТМЕНА","ОТМЕНИТЬ","(прозрачный)",
-    "H: справка   L: язык   T: текст   E: рисовать   ПКМ: меню   Ctrl+O: открыть   Ctrl+S: сохранить",
-    "РУ",
+    "Изображение не загружено. Перетащите файл или нажмите [ Открыть ]",
+    "Открыть","PNG","GIF","PCX",
+    "Рисовать","Справка","РУ",
+    "НАСТРОЙКИ",
+    "Ширина","Высота","Первый код","Интервал","Масштаб",
+    "ЖИВОЙ ПРЕДПРОСМОТР","Введите текст...",
     "СПРАВКА",
     "ГОРЯЧИЕ КЛАВИШИ",
     "О ПРОГРАММЕ",
-    "Закрыть (H / Esc)",
-    "OpenBOR Font Editor — редактор растровых шрифтов для движка OpenBOR. Сохраняет в индексированные PNG / GIF / PCX, есть спрайт-редактор, живой предпросмотр и русский / английский интерфейс.||Создатель: MKLIUKANG1."
+    "Закрыть (Esc)",
+    "OpenBOR Font Editor v1.1 — редактор растровых шрифтов для движка OpenBOR.||Тулбар, боковая панель настроек, живой предпросмотр, спрайт-редактор, сохранение в PNG/GIF/PCX, русский/английский интерфейс.||Создатель: MKLIUKANG1.",
+    "ЛКМ: рисовать   ПКМ: меню   Alt+ЛКМ: пипетка   Колесо: zoom   Ctrl+Z: отмена",
+    "Карандаш","Ластик","Заливка","Пипетка",
+    "ПРИМЕНИТЬ","ОТМЕНА","ОТМЕНИТЬ","(прозрачный)",
+    "файл не загружен","файл",
+    "наведите на ячейку, чтобы увидеть код",
+    "Сбросить настройки"
 };
 static const UIStr& S() { return (g_lang == LANG_RU) ? STR_RU : STR_EN; }
 
@@ -170,6 +181,8 @@ struct FontSheet {
     int renderScale = 3;
     std::string path;
     int total_chars = 0;
+    int cols = 0;
+    int rows = 0;
 };
 struct PaintState {
     bool active  = false;
@@ -181,21 +194,31 @@ struct PaintState {
     std::vector<std::vector<Uint32>> undo_stack;
     int lastPaintX = -1, lastPaintY = -1;
 };
-struct TextDialog { bool active = false; std::string text; };
-struct ContextMenu { bool active = false; int x = 0, y = 0, selected = -1; };
 struct HelpWindow { bool active = false; };
+struct ContextMenu { bool active = false; int x = 0, y = 0, selected = -1; };
 
 static FontSheet   g_font;
 static PaintState  g_paint;
-static TextDialog  g_text_dlg;
-static ContextMenu g_ctx;
 static HelpWindow  g_help;
+static ContextMenu g_ctx;
 
 static SDL_Window*   g_window   = nullptr;
 static SDL_Renderer* g_renderer = nullptr;
 static TTF_Font*     g_ui_font  = nullptr;
 static TTF_Font*     g_ui_font_bold = nullptr;
+
+// Прокрутка листа
+static int g_scroll_x = 0;
+static int g_scroll_y = 0;
+
+// Ввод текста
+static bool        g_typing = false;
 static std::string g_test_text = "Hello, World! 0123";
+
+// Hover-ячейка под курсором
+static int  g_hover_col = -1;
+static int  g_hover_row = -1;
+static bool g_hover_valid = false;
 
 // ==================================================================
 //                     ХЕЛПЕРЫ
@@ -204,12 +227,16 @@ static void unloadFont() {
     if (g_font.tex)  { SDL_DestroyTexture(g_font.tex); g_font.tex = nullptr; }
     if (g_font.surf) { SDL_FreeSurface(g_font.surf);   g_font.surf = nullptr; }
     g_font.total_chars = 0;
+    g_font.cols = 0;
+    g_font.rows = 0;
+    g_scroll_x = 0;
+    g_scroll_y = 0;
 }
 static void refreshCharCount() {
-    if (!g_font.surf) { g_font.total_chars = 0; return; }
-    int cols = g_font.surf->w / std::max(1, g_font.charW);
-    int rows = g_font.surf->h / std::max(1, g_font.charH);
-    g_font.total_chars = cols * rows;
+    if (!g_font.surf) { g_font.total_chars = 0; g_font.cols = 0; g_font.rows = 0; return; }
+    g_font.cols = g_font.surf->w / std::max(1, g_font.charW);
+    g_font.rows = g_font.surf->h / std::max(1, g_font.charH);
+    g_font.total_chars = g_font.cols * g_font.rows;
 }
 static void updateFontTexture() {
     if (!g_font.tex || !g_font.surf) return;
@@ -235,7 +262,7 @@ static bool loadFont(const std::string& path) {
     g_font.path = path;
     refreshCharCount();
     SDL_SetWindowTitle(g_window, (S().title + " - " + path).c_str());
-    log_msg("Font loaded OK, charW=" + std::to_string(g_font.charW) + " charH=" + std::to_string(g_font.charH));
+    log_msg("Font loaded OK");
     return true;
 }
 static void utf8_pop_back(std::string& s) {
@@ -270,78 +297,35 @@ static void renderText(SDL_Renderer* r, TTF_Font* font,
     SDL_DestroyTexture(t);
     SDL_FreeSurface(s);
 }
-// Многострочный текст с \n
-static void renderTextMulti(SDL_Renderer* r, TTF_Font* font,
-                            const std::string& text, int x, int y, SDL_Color color,
-                            int lineSpacing = 4) {
-    if (!font || text.empty()) return;
-    int lineH = TTF_FontLineSkip(font) + lineSpacing;
-    int cy = y;
-    std::string line;
-    for (size_t i = 0; i <= text.size(); ) {
-        if (i == text.size() || text[i] == '\n') {
-            if (!line.empty()) renderText(r, font, line, x, cy, color);
-            cy += lineH;
-            line.clear();
-            if (i < text.size()) ++i;
-            else break;
-        } else { line.push_back(text[i]); ++i; }
-    }
-}
 static int textWidth(TTF_Font* font, const std::string& text) {
     if (!font || text.empty()) return 0;
     int w = 0, h = 0;
     TTF_SizeUTF8(font, text.c_str(), &w, &h);
     return w;
 }
-
-// Разбивает текст на строки, которые укладываются в maxWidth.
-// Понимает разделители абзаца: '\n' и "||".
 static std::vector<std::string> wrapText(TTF_Font* font, const std::string& text, int maxWidth) {
     std::vector<std::string> out;
     if (!font || text.empty()) return out;
-
-    // Разделяем на абзацы по "||" и '\n'
     std::vector<std::string> paragraphs;
     std::string cur;
     for (size_t i = 0; i < text.size(); ) {
         if (i + 1 < text.size() && text[i] == '|' && text[i+1] == '|') {
-            paragraphs.push_back(cur);
-            cur.clear();
-            i += 2;
+            paragraphs.push_back(cur); cur.clear(); i += 2;
         } else if (text[i] == '\n') {
-            paragraphs.push_back(cur);
-            cur.clear();
-            ++i;
-        } else {
-            cur.push_back(text[i]);
-            ++i;
-        }
+            paragraphs.push_back(cur); cur.clear(); ++i;
+        } else { cur.push_back(text[i]); ++i; }
     }
     if (!cur.empty()) paragraphs.push_back(cur);
-
-    // Переносим каждую строку по словам
     for (auto& p : paragraphs) {
-        std::string line;
-        std::string word;
+        std::string line, word;
         auto flush_word = [&]() {
             if (word.empty()) return;
             std::string test = line.empty() ? word : (line + " " + word);
-            if (textWidth(font, test) <= maxWidth) {
-                line = test;
-            } else {
-                if (!line.empty()) out.push_back(line);
-                line = word;
-            }
+            if (textWidth(font, test) <= maxWidth) line = test;
+            else { if (!line.empty()) out.push_back(line); line = word; }
             word.clear();
         };
-        for (char c : p) {
-            if (c == ' ' || c == '\t') {
-                flush_word();
-            } else {
-                word.push_back(c);
-            }
-        }
+        for (char c : p) { if (c == ' ' || c == '\t') flush_word(); else word.push_back(c); }
         flush_word();
         if (!line.empty()) out.push_back(line);
     }
@@ -349,7 +333,7 @@ static std::vector<std::string> wrapText(TTF_Font* font, const std::string& text
 }
 
 // ==================================================================
-//                     СОХРАНЕНИЕ: PNG / GIF / PCX
+//                     СОХРАНЕНИЕ PNG / GIF / PCX
 // ==================================================================
 static SDL_Surface* toIndexed8(SDL_Surface* src) {
     if (!src) return nullptr;
@@ -498,44 +482,197 @@ static bool savePCX(SDL_Surface* src, const char* path) {
 }
 
 // ==================================================================
-//                     РИСОВАНИЕ
+//                     КНОПКА (переиспользуемый хелпер)
 // ==================================================================
-static void drawSheet(SDL_Renderer* r, int offsetX, int offsetY) {
+struct Button {
+    SDL_Rect rect;
+    std::string label;
+    bool hover = false;
+};
+
+static bool point_in(const SDL_Rect& r, int x, int y) {
+    return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+}
+
+static void drawButton(SDL_Renderer* r, const Button& b,
+                       SDL_Color bg, SDL_Color border, SDL_Color text) {
+    SDL_SetRenderDrawColor(r, bg.r, bg.g, bg.b, bg.a);
+    SDL_RenderFillRect(r, &b.rect);
+    SDL_SetRenderDrawColor(r, border.r, border.g, border.b, border.a);
+    SDL_RenderDrawRect(r, &b.rect);
+    int tw = textWidth(g_ui_font, b.label);
+    renderText(r, g_ui_font, b.label,
+               b.rect.x + (b.rect.w - tw) / 2,
+               b.rect.y + (b.rect.h - 16) / 2 - 1,
+               text);
+}
+
+// ==================================================================
+//                     РАЗМЕРЫ ЭЛЕМЕНТОВ
+// ==================================================================
+static const int TOOLBAR_H   = 48;
+static const int SIDEBAR_W   = 220;
+static const int PREVIEW_H   = 140;
+static const int STATUSBAR_H = 24;
+static const int INPUT_H     = 30;
+
+// ==================================================================
+//                     ОТРИСОВКА ЛИСТА
+// ==================================================================
+static void drawSheet(SDL_Renderer* r, int cx, int cy, int cw, int ch) {
+    // Фон под лист
+    SDL_SetRenderDrawColor(r, 16, 18, 26, 255);
+    SDL_Rect bg = { cx, cy, cw, ch };
+    SDL_RenderFillRect(r, &bg);
+
     if (!g_font.tex || !g_font.surf) {
-        renderText(r, g_ui_font, S().no_image, offsetX + 20, offsetY + 20, SDL_Color{120,120,140,255});
+        SDL_Color dim = { 120, 130, 150, 255 };
+        int tw = textWidth(g_ui_font, S().no_image);
+        renderText(r, g_ui_font, S().no_image, cx + (cw - tw) / 2, cy + ch / 2 - 8, dim);
         return;
     }
-    int sw = g_font.surf->w * g_font.renderScale;
-    int sh = g_font.surf->h * g_font.renderScale;
+
+    SDL_Rect clip = { cx, cy, cw, ch };
+    SDL_RenderSetClipRect(r, &clip);
+
+    int scale = g_font.renderScale;
+    int sw = g_font.surf->w * scale;
+    int sh = g_font.surf->h * scale;
+
+    // Ограничение прокрутки
+    int maxSX = std::max(0, sw - cw);
+    int maxSY = std::max(0, sh - ch);
+    if (g_scroll_x > maxSX) g_scroll_x = maxSX;
+    if (g_scroll_y > maxSY) g_scroll_y = maxSY;
+    if (g_scroll_x < 0) g_scroll_x = 0;
+    if (g_scroll_y < 0) g_scroll_y = 0;
+
+    int drawX = cx - g_scroll_x;
+    int drawY = cy - g_scroll_y;
+
+    // Шахматка
     int tile = 8;
-    for (int y = 0; y < sh; y += tile)
+    int startX = drawX;
+    int startY = drawY;
+    for (int y = 0; y < sh; y += tile) {
         for (int x = 0; x < sw; x += tile) {
+            int px = startX + x;
+            int py = startY + y;
+            if (px + tile < cx || px > cx + cw) continue;
+            if (py + tile < cy || py > cy + ch) continue;
             bool dark = ((x / tile) + (y / tile)) % 2 == 0;
             SDL_SetRenderDrawColor(r, dark ? 40 : 55, dark ? 40 : 55, dark ? 50 : 65, 255);
-            SDL_Rect rc = { offsetX + x, offsetY + y, std::min(tile, sw - x), std::min(tile, sh - y) };
+            SDL_Rect rc = { px, py, std::min(tile, sw - x), std::min(tile, sh - y) };
             SDL_RenderFillRect(r, &rc);
         }
-    SDL_Rect dst = { offsetX, offsetY, sw, sh };
+    }
+
+    // Лист
+    SDL_Rect dst = { drawX, drawY, sw, sh };
     SDL_RenderCopy(r, g_font.tex, nullptr, &dst);
 
-    int cw = g_font.charW * g_font.renderScale;
-    int ch = g_font.charH * g_font.renderScale;
-    SDL_SetRenderDrawColor(r, 100, 140, 200, 180);
-    if (cw > 0) for (int x = 0; x <= sw; x += cw) SDL_RenderDrawLine(r, offsetX + x, offsetY, offsetX + x, offsetY + sh);
-    if (ch > 0) for (int y = 0; y <= sh; y += ch) SDL_RenderDrawLine(r, offsetX, offsetY + y, offsetX + sw, offsetY + y);
+    // Сетка символов
+    int cw_ = g_font.charW * scale;
+    int ch_ = g_font.charH * scale;
+    SDL_SetRenderDrawColor(r, 90, 130, 190, 170);
+    if (cw_ > 0) {
+        int start = (g_scroll_x / cw_) * cw_;
+        for (int x = start; x <= sw; x += cw_) {
+            int px = drawX + x;
+            if (px < cx || px > cx + cw) continue;
+            SDL_RenderDrawLine(r, px, std::max(cy, drawY),
+                                  px, std::min(cy + ch, drawY + sh));
+        }
+    }
+    if (ch_ > 0) {
+        int start = (g_scroll_y / ch_) * ch_;
+        for (int y = start; y <= sh; y += ch_) {
+            int py = drawY + y;
+            if (py < cy || py > cy + ch) continue;
+            SDL_RenderDrawLine(r, std::max(cx, drawX), py,
+                                  std::min(cx + cw, drawX + sw), py);
+        }
+    }
 
-    SDL_SetRenderDrawColor(r, 160, 200, 255, 255);
-    SDL_Rect border = { offsetX - 1, offsetY - 1, sw + 2, sh + 2 };
+    // Hover-подсветка ячейки
+    int mx, my;
+    SDL_GetMouseState(&mx, &my);
+    g_hover_valid = false;
+    if (mx >= cx && mx < cx + cw && my >= cy && my < cy + ch && cw_ > 0 && ch_ > 0) {
+        int fx = (mx - drawX);
+        int fy = (my - drawY);
+        if (fx >= 0 && fy >= 0) {
+            int col = fx / cw_;
+            int row = fy / ch_;
+            if (col < g_font.cols && row < g_font.rows) {
+                g_hover_col = col;
+                g_hover_row = row;
+                g_hover_valid = true;
+                SDL_Rect hl = { drawX + col * cw_, drawY + row * ch_, cw_, ch_ };
+                SDL_SetRenderDrawColor(r, 255, 210, 60, 255);
+                SDL_RenderDrawRect(r, &hl);
+                SDL_SetRenderDrawColor(r, 255, 210, 60, 60);
+                SDL_Rect hl2 = { hl.x + 1, hl.y + 1, hl.w - 2, hl.h - 2 };
+                SDL_RenderFillRect(r, &hl2);
+            }
+        }
+    }
+
+    // Рамка листа
+    SDL_SetRenderDrawColor(r, 100, 140, 200, 255);
+    SDL_Rect border = { drawX - 1, drawY - 1, sw + 2, sh + 2 };
     SDL_RenderDrawRect(r, &border);
+
+    SDL_RenderSetClipRect(r, nullptr);
+
+    // Скроллбар по вертикали
+    if (sh > ch) {
+        int trackX = cx + cw - 6;
+        int trackY = cy;
+        int trackH = ch;
+        SDL_SetRenderDrawColor(r, 30, 34, 46, 200);
+        SDL_Rect track = { trackX, trackY, 4, trackH };
+        SDL_RenderFillRect(r, &track);
+        float ratio = (float)ch / sh;
+        int barH = std::max(20, (int)(trackH * ratio));
+        int barY = trackY + (int)((float)g_scroll_y / sh * trackH);
+        if (barY + barH > trackY + trackH) barY = trackY + trackH - barH;
+        SDL_SetRenderDrawColor(r, 90, 130, 190, 220);
+        SDL_Rect bar = { trackX, barY, 4, barH };
+        SDL_RenderFillRect(r, &bar);
+    }
+    // Скроллбар горизонтальный
+    if (sw > cw) {
+        int trackY = cy + ch - 6;
+        int trackX = cx;
+        int trackW = cw;
+        SDL_SetRenderDrawColor(r, 30, 34, 46, 200);
+        SDL_Rect track = { trackX, trackY, trackW, 4 };
+        SDL_RenderFillRect(r, &track);
+        float ratio = (float)cw / sw;
+        int barW = std::max(20, (int)(trackW * ratio));
+        int barX = trackX + (int)((float)g_scroll_x / sw * trackW);
+        if (barX + barW > trackX + trackW) barX = trackX + trackW - barW;
+        SDL_SetRenderDrawColor(r, 90, 130, 190, 220);
+        SDL_Rect bar = { barX, trackY, barW, 4 };
+        SDL_RenderFillRect(r, &bar);
+    }
 }
-static void drawPreviewText(SDL_Renderer* r, int x, int y) {
+
+// ==================================================================
+//                     ПРЕДПРОСМОТР ТЕКСТА
+// ==================================================================
+static void drawPreviewText(SDL_Renderer* r, int x, int y, int maxW, int maxH) {
     if (!g_font.tex || !g_font.surf) return;
     int cw = g_font.charW, ch = g_font.charH;
     if (cw <= 0 || ch <= 0) return;
-    int cols = g_font.surf->w / cw;
-    int rows = g_font.surf->h / ch;
-    if (cols <= 0) return;
-    int scale = g_font.renderScale;
+    int cols = g_font.cols, rows = g_font.rows;
+    if (cols <= 0 || rows <= 0) return;
+
+    int scale = 3;
+    SDL_Rect clip = { x, y, maxW, maxH };
+    SDL_RenderSetClipRect(r, &clip);
+
     int lineX = x, penY = y;
     for (size_t i = 0; i < g_test_text.size(); ) {
         uint32_t cp = utf8_next(g_test_text, i);
@@ -549,52 +686,245 @@ static void drawPreviewText(SDL_Renderer* r, int x, int y) {
             SDL_RenderCopy(r, g_font.tex, &src, &dst);
         }
         lineX += cw * scale + g_font.spacing * scale;
+        if (lineX + cw * scale > x + maxW) { lineX = x; penY += ch * scale + 4; }
+        if (penY > y + maxH) break;
     }
-}
-static void drawNormalUI() {
-    int w = 0, h = 0;
-    SDL_GetRendererOutputSize(g_renderer, &w, &h);
-    SDL_SetRenderDrawColor(g_renderer, 18, 20, 30, 255);
-    SDL_RenderClear(g_renderer);
-    drawSheet(g_renderer, 20, 40);
 
-    int previewY = h - 160;
-    SDL_SetRenderDrawColor(g_renderer, 24, 28, 40, 255);
-    SDL_Rect prev_bg = { 0, previewY, w, h - previewY };
-    SDL_RenderFillRect(g_renderer, &prev_bg);
-    SDL_SetRenderDrawColor(g_renderer, 60, 80, 120, 255);
-    SDL_RenderDrawLine(g_renderer, 0, previewY, w, previewY);
-
-    SDL_Color label = { 140, 180, 240, 255 };
-    renderText(g_renderer, g_ui_font, S().preview, 20, previewY + 8, label);
-    drawPreviewText(g_renderer, 20, previewY + 34);
-    renderText(g_renderer, g_ui_font, S().type_hint, 20, previewY + 120, SDL_Color{120,140,180,255});
-
-    // Верхняя статус-панель
-    SDL_SetRenderDrawColor(g_renderer, 30, 36, 52, 255);
-    SDL_Rect top = { 0, 0, w, 32 };
-    SDL_RenderFillRect(g_renderer, &top);
-
-    char status[256];
-    snprintf(status, sizeof(status),
-        "charW=%d  charH=%d  first=%d  spacing=%d  scale=%d  chars=%d  [%s]",
-        g_font.charW, g_font.charH, g_font.firstChar,
-        g_font.spacing, g_font.renderScale, g_font.total_chars,
-        S().lang_tag.c_str());
-    renderText(g_renderer, g_ui_font, status, 12, 8, label);
-
-    // Нижняя строка подсказок — короткая и всегда целиком
-    SDL_SetRenderDrawColor(g_renderer, 24, 28, 40, 255);
-    SDL_Rect botbg = { 0, h - 22, w, 22 };
-    SDL_RenderFillRect(g_renderer, &botbg);
-    SDL_SetRenderDrawColor(g_renderer, 60, 80, 120, 255);
-    SDL_RenderDrawLine(g_renderer, 0, h - 22, w, h - 22);
-
-    renderText(g_renderer, g_ui_font, S().status_hint, 12, h - 18, SDL_Color{170,190,220,255});
+    SDL_RenderSetClipRect(r, nullptr);
 }
 
 // ==================================================================
-//                     HELP / ABOUT
+//                     ГЛАВНАЯ ОТРИСОВКА (обычный режим)
+// ==================================================================
+static void drawMainUI() {
+    int w = 0, h = 0;
+    SDL_GetRendererOutputSize(g_renderer, &w, &h);
+
+    // === ФОН ===
+    SDL_SetRenderDrawColor(g_renderer, 18, 20, 28, 255);
+    SDL_RenderClear(g_renderer);
+
+    // === ТУЛБАР ===
+    SDL_SetRenderDrawColor(g_renderer, 26, 30, 42, 255);
+    SDL_Rect tb = { 0, 0, w, TOOLBAR_H };
+    SDL_RenderFillRect(g_renderer, &tb);
+    SDL_SetRenderDrawColor(g_renderer, 50, 70, 110, 255);
+    SDL_RenderDrawLine(g_renderer, 0, TOOLBAR_H - 1, w, TOOLBAR_H - 1);
+
+    SDL_Color btnBg = { 44, 52, 72, 255 };
+    SDL_Color btnBorder = { 90, 120, 180, 255 };
+    SDL_Color btnText = { 225, 235, 250, 255 };
+
+    int bx = 8;
+    int bh = 34;
+    int by = (TOOLBAR_H - bh) / 2;
+
+    // Open
+    int bw = textWidth(g_ui_font, S().btn_open) + 24;
+    Button bOpen = { { bx, by, bw, bh }, S().btn_open, false };
+    drawButton(g_renderer, bOpen, btnBg, btnBorder, btnText);
+    bx += bw + 6;
+
+    // Save PNG
+    bw = textWidth(g_ui_font, S().btn_save_png) + 24;
+    Button bPNG = { { bx, by, bw, bh }, S().btn_save_png, false };
+    drawButton(g_renderer, bPNG, btnBg, btnBorder, btnText);
+    bx += bw + 4;
+
+    // Save GIF
+    bw = textWidth(g_ui_font, S().btn_save_gif) + 24;
+    Button bGIF = { { bx, by, bw, bh }, S().btn_save_gif, false };
+    drawButton(g_renderer, bGIF, btnBg, btnBorder, btnText);
+    bx += bw + 4;
+
+    // Save PCX
+    bw = textWidth(g_ui_font, S().btn_save_pcx) + 24;
+    Button bPCX = { { bx, by, bw, bh }, S().btn_save_pcx, false };
+    drawButton(g_renderer, bPCX, btnBg, btnBorder, btnText);
+    bx += bw + 16;
+
+    // Разделитель
+    SDL_SetRenderDrawColor(g_renderer, 60, 80, 120, 255);
+    SDL_RenderDrawLine(g_renderer, bx, 10, bx, TOOLBAR_H - 10);
+    bx += 12;
+
+    // Paint
+    bw = textWidth(g_ui_font, S().btn_paint) + 24;
+    Button bPaint = { { bx, by, bw, bh }, S().btn_paint, false };
+    drawButton(g_renderer, bPaint, btnBg, btnBorder, btnText);
+    bx += bw + 6;
+
+    // Help
+    bw = textWidth(g_ui_font, S().btn_help) + 24;
+    Button bHelp = { { bx, by, bw, bh }, S().btn_help, false };
+    drawButton(g_renderer, bHelp, btnBg, btnBorder, btnText);
+
+    // Language (справа)
+    int langW = textWidth(g_ui_font, S().btn_lang) + 24;
+    Button bLang = { { w - langW - 8, by, langW, bh }, S().btn_lang, false };
+    drawButton(g_renderer, bLang, { 60, 80, 130, 255 }, btnBorder, btnText);
+
+    // === БОКОВАЯ ПАНЕЛЬ НАСТРОЕК ===
+    int sbX = w - SIDEBAR_W;
+    SDL_SetRenderDrawColor(g_renderer, 24, 28, 40, 255);
+    SDL_Rect sb = { sbX, TOOLBAR_H, SIDEBAR_W, h - TOOLBAR_H - STATUSBAR_H };
+    SDL_RenderFillRect(g_renderer, &sb);
+    SDL_SetRenderDrawColor(g_renderer, 50, 70, 110, 255);
+    SDL_RenderDrawLine(g_renderer, sbX, TOOLBAR_H, sbX, h - STATUSBAR_H);
+
+    TTF_Font* fb = g_ui_font_bold ? g_ui_font_bold : g_ui_font;
+    renderText(g_renderer, fb, S().settings_title, sbX + 16, TOOLBAR_H + 14, SDL_Color{150,190,240,255});
+
+    struct SetRow { const char* label; int* val; int minv; int maxv; };
+    SetRow rows[5] = {
+        { S().set_charw.c_str(),   &g_font.charW,      1,  64 },
+        { S().set_charh.c_str(),   &g_font.charH,      1,  64 },
+        { S().set_first.c_str(),   &g_font.firstChar,  0, 255 },
+        { S().set_spacing.c_str(), &g_font.spacing,  -10,  32 },
+        { S().set_scale.c_str(),   &g_font.renderScale, 1,   8 },
+    };
+
+    int rowY = TOOLBAR_H + 46;
+    int rowH = 42;
+    for (int i = 0; i < 5; ++i) {
+        int rx = sbX + 16;
+        int rw = SIDEBAR_W - 32;
+        // Заголовок
+        renderText(g_renderer, g_ui_font, rows[i].label, rx, rowY, SDL_Color{180,200,230,255});
+
+        // Кнопки [-][value][+]
+        int minusX = rx;
+        int plusX  = rx + rw - 30;
+        int valX   = rx + 34;
+        int valW   = rw - 34 - 34;
+        int btnY   = rowY + 20;
+        int btnS   = 26;
+
+        SDL_Rect rm = { minusX, btnY, btnS, btnS };
+        SDL_Rect rp = { plusX, btnY, btnS, btnS };
+        SDL_Rect rv = { valX, btnY, valW, btnS };
+
+        SDL_Color c1 = { 44, 52, 72, 255 };
+        SDL_Color c2 = { 90, 120, 180, 255 };
+        SDL_Color ct = { 220, 230, 250, 255 };
+
+        drawButton(g_renderer, { rm, "−", false }, c1, c2, ct);
+        drawButton(g_renderer, { rp, "+", false }, c1, c2, ct);
+
+        // Значение
+        SDL_SetRenderDrawColor(g_renderer, 14, 18, 28, 255);
+        SDL_RenderFillRect(g_renderer, &rv);
+        SDL_SetRenderDrawColor(g_renderer, 60, 80, 120, 255);
+        SDL_RenderDrawRect(g_renderer, &rv);
+        std::string vs = std::to_string(*rows[i].val);
+        int vw = textWidth(g_ui_font, vs);
+        renderText(g_renderer, g_ui_font, vs, rv.x + (rv.w - vw) / 2, rv.y + 5, ct);
+
+        rowY += rowH;
+    }
+
+    // Кнопка сброса
+    int resetX = sbX + 16;
+    int resetY = rowY + 6;
+    int resetW = SIDEBAR_W - 32;
+    int resetH = 32;
+    Button bReset = { { resetX, resetY, resetW, resetH }, S().reset_defaults, false };
+    drawButton(g_renderer, bReset, { 90, 60, 60, 255 }, { 180, 100, 100, 255 }, btnText);
+
+    // === ОБЛАСТЬ ЛИСТА ===
+    int sheetX = 0;
+    int sheetY = TOOLBAR_H;
+    int sheetW = w - SIDEBAR_W;
+    int sheetH = h - TOOLBAR_H - PREVIEW_H - STATUSBAR_H;
+    drawSheet(g_renderer, sheetX, sheetY, sheetW, sheetH);
+
+    // === ОБЛАСТЬ ПРЕДПРОСМОТРА ===
+    int pvX = 0;
+    int pvY = h - STATUSBAR_H - PREVIEW_H;
+    int pvW = w - SIDEBAR_W;
+    int pvH = PREVIEW_H;
+    SDL_SetRenderDrawColor(g_renderer, 22, 26, 36, 255);
+    SDL_Rect pv = { pvX, pvY, pvW, pvH };
+    SDL_RenderFillRect(g_renderer, &pv);
+    SDL_SetRenderDrawColor(g_renderer, 50, 70, 110, 255);
+    SDL_RenderDrawLine(g_renderer, pvX, pvY, pvX + pvW, pvY);
+
+    renderText(g_renderer, fb, S().preview_title, pvX + 16, pvY + 10, SDL_Color{150,190,240,255});
+
+    // Поле ввода
+    int inputX = pvX + 16;
+    int inputY = pvY + 34;
+    int inputW = pvW - 32;
+    SDL_Rect inputRect = { inputX, inputY, inputW, INPUT_H };
+    SDL_SetRenderDrawColor(g_renderer, 12, 16, 24, 255);
+    SDL_RenderFillRect(g_renderer, &inputRect);
+    SDL_SetRenderDrawColor(g_renderer,
+        g_typing ? 120 : 60, g_typing ? 180 : 80, g_typing ? 240 : 120, 255);
+    SDL_RenderDrawRect(g_renderer, &inputRect);
+
+    SDL_Color txtColor = { 230, 240, 255, 255 };
+    if (g_test_text.empty() && !g_typing) {
+        renderText(g_renderer, g_ui_font, S().input_hint,
+                   inputX + 8, inputY + 7, SDL_Color{110,130,160,255});
+    } else {
+        renderText(g_renderer, g_ui_font, g_test_text, inputX + 8, inputY + 7, txtColor);
+    }
+
+    // Курсор
+    if (g_typing && (SDL_GetTicks() / 500) % 2 == 0) {
+        int tw = textWidth(g_ui_font, g_test_text);
+        SDL_SetRenderDrawColor(g_renderer, 200, 230, 255, 255);
+        SDL_Rect cur = { inputX + 8 + tw + 1, inputY + 7, 2, 16 };
+        SDL_RenderFillRect(g_renderer, &cur);
+    }
+
+    // Рисуем текст шрифтом пользователя ниже
+    drawPreviewText(g_renderer, pvX + 16, inputY + INPUT_H + 8, pvW - 32, pvH - INPUT_H - 48);
+
+    // === СТАТУСБАР ===
+    SDL_SetRenderDrawColor(g_renderer, 20, 24, 34, 255);
+    SDL_Rect sbr = { 0, h - STATUSBAR_H, w, STATUSBAR_H };
+    SDL_RenderFillRect(g_renderer, &sbr);
+    SDL_SetRenderDrawColor(g_renderer, 50, 70, 110, 255);
+    SDL_RenderDrawLine(g_renderer, 0, h - STATUSBAR_H, w, h - STATUSBAR_H);
+
+    // Слева: путь файла
+    std::string fileInfo = g_font.surf
+        ? (S().status_file + ": " + g_font.path)
+        : S().status_no_file;
+    // Обрезаем путь
+    int maxLen = 70;
+    if ((int)fileInfo.size() > maxLen)
+        fileInfo = "..." + fileInfo.substr(fileInfo.size() - maxLen);
+    renderText(g_renderer, g_ui_font, fileInfo, 10, h - STATUSBAR_H + 4, SDL_Color{140,160,190,255});
+
+    // По центру: hover-инфа
+    if (g_hover_valid && g_font.surf) {
+        int idx = g_hover_row * g_font.cols + g_hover_col;
+        int code = idx + g_font.firstChar;
+        char buf[128];
+        snprintf(buf, sizeof(buf), "cell %d,%d  index=%d  code=%d",
+                 g_hover_col, g_hover_row, idx, code);
+        int tw = textWidth(g_ui_font, buf);
+        renderText(g_renderer, g_ui_font, buf, (w - tw) / 2, h - STATUSBAR_H + 4,
+                   SDL_Color{200,220,250,255});
+    } else if (g_font.surf) {
+        int tw = textWidth(g_ui_font, S().hover_none);
+        renderText(g_renderer, g_ui_font, S().hover_none, (w - tw) / 2, h - STATUSBAR_H + 4,
+                   SDL_Color{100,120,150,255});
+    }
+
+    // Справа: параметры
+    char buf[128];
+    snprintf(buf, sizeof(buf), "%dx%d  chars=%d  [%s]",
+             g_font.charW, g_font.charH, g_font.total_chars, S().btn_lang.c_str());
+    int tw = textWidth(g_ui_font, buf);
+    renderText(g_renderer, g_ui_font, buf, w - tw - 10, h - STATUSBAR_H + 4,
+               SDL_Color{140,170,210,255});
+}
+
+// ==================================================================
+//                     HELP WINDOW
 // ==================================================================
 static void drawHelp() {
     int w = 0, h = 0;
@@ -613,14 +943,12 @@ static void drawHelp() {
     SDL_Rect dlg = { dx, dy, dw, dh };
     SDL_RenderFillRect(g_renderer, &dlg);
 
-    // Заголовок
     SDL_SetRenderDrawColor(g_renderer, 40, 60, 100, 255);
     SDL_Rect hdr = { dx, dy, dw, 40 };
     SDL_RenderFillRect(g_renderer, &hdr);
     TTF_Font* fb = g_ui_font_bold ? g_ui_font_bold : g_ui_font;
     renderText(g_renderer, fb, S().help_title, dx + 16, dy + 10, SDL_Color{200,220,255,255});
 
-    // Рабочая область (между заголовком и кнопкой)
     int contentX = dx + 20;
     int contentY = dy + 54;
     int contentW = dw - 40;
@@ -632,15 +960,13 @@ static void drawHelp() {
     int lineH = 20;
     int y = contentY;
 
-    // ---- HOTKEYS ----
     renderText(g_renderer, fb, S().help_hotkeys, contentX, y, SDL_Color{140,180,240,255});
     y += 28;
 
     const char* keysEN[] = {
         "Ctrl+O", "Ctrl+S", "Ctrl+Shift+S", "Ctrl+Alt+S",
         "F1 / F2", "F3 / F4", "F5 / F6", "F7 / F8", "F9 / F10",
-        "L", "T", "E", "H",
-        "RMB", "1..4 (in paint)", "Ctrl+Z (in paint)", "Esc"
+        "L", "T", "E", "H", "Esc"
     };
     const char* descEN[] = {
         "Open image",
@@ -653,19 +979,15 @@ static void drawHelp() {
         "Display scale -/+",
         "Spacing between characters -/+",
         "Toggle language (EN / RU)",
-        "Text input dialog",
+        "Focus text input (bottom)",
         "Paint editor",
         "Help / About (this window)",
-        "Context menu (Open / Save / Exit)",
-        "Switch paint tool",
-        "Undo in paint",
-        "Close dialog / exit"
+        "Exit program / close dialog"
     };
     const char* keysRU[] = {
         "Ctrl+O", "Ctrl+S", "Ctrl+Shift+S", "Ctrl+Alt+S",
         "F1 / F2", "F3 / F4", "F5 / F6", "F7 / F8", "F9 / F10",
-        "L", "T", "E", "H",
-        "ПКМ", "1..4 (в редакторе)", "Ctrl+Z (в редакторе)", "Esc"
+        "L", "T", "E", "H", "Esc"
     };
     const char* descRU[] = {
         "Открыть изображение",
@@ -678,29 +1000,24 @@ static void drawHelp() {
         "Масштаб отображения -/+",
         "Интервал между символами -/+",
         "Переключить язык (RU / EN)",
-        "Окно ввода текста",
+        "Фокус на вводе текста внизу",
         "Редактор (Paint)",
         "Справка / О программе (это окно)",
-        "Контекстное меню (Открыть / Сохранить / Выход)",
-        "Сменить инструмент",
-        "Отмена в редакторе",
-        "Закрыть окно / выход"
+        "Выход / закрыть окно"
     };
     const char** keys = (g_lang == LANG_RU) ? keysRU : keysEN;
     const char** desc = (g_lang == LANG_RU) ? descRU : descEN;
 
-    int keyColW = 180;   // ширина колонки с клавишей
-    for (int i = 0; i < 17; ++i) {
+    int keyColW = 180;
+    for (int i = 0; i < 14; ++i) {
         renderText(g_renderer, g_ui_font, keys[i], contentX, y, SDL_Color{240,220,120,255});
         renderText(g_renderer, g_ui_font, desc[i], contentX + keyColW, y, SDL_Color{220,230,250,255});
         y += lineH;
     }
 
-    // ---- ABOUT ----
     y += 16;
     renderText(g_renderer, fb, S().help_about, contentX, y, SDL_Color{140,180,240,255});
     y += 28;
-
     auto lines = wrapText(g_ui_font, S().about_text, contentW);
     for (auto& ln : lines) {
         renderText(g_renderer, g_ui_font, ln, contentX, y, SDL_Color{210,220,240,255});
@@ -710,9 +1027,7 @@ static void drawHelp() {
 
     SDL_RenderSetClipRect(g_renderer, nullptr);
 
-    // ---- Кнопка Закрыть ----
-    int btnW = 200;
-    int btnH = 34;
+    int btnW = 200, btnH = 34;
     int btnX = dx + (dw - btnW) / 2;
     int btnY = dy + dh - 48;
     SDL_SetRenderDrawColor(g_renderer, 55, 100, 160, 255);
@@ -724,168 +1039,6 @@ static void drawHelp() {
     renderText(g_renderer, g_ui_font, S().help_close,
                btnX + (btnW - tw) / 2, btnY + 9, SDL_Color{240,245,255,255});
 
-    // Внешняя рамка
-    SDL_SetRenderDrawColor(g_renderer, 120, 170, 240, 255);
-    SDL_RenderDrawRect(g_renderer, &dlg);
-    SDL_SetRenderDrawBlendMode(g_renderer, SDL_BLENDMODE_NONE);
-}
-
-// ==================================================================
-//                     КОНТЕКСТНОЕ МЕНЮ
-// ==================================================================
-static const char* CTX_ITEMS_EN[5] = { "Open...", "Save as PNG...", "Save as GIF...", "Save as PCX...", "Exit" };
-static const char* CTX_ITEMS_RU[5] = { "Открыть...", "Сохранить PNG...", "Сохранить GIF...", "Сохранить PCX...", "Выход" };
-
-static int ctx_item_height() { return 26; }
-static int ctx_menu_width()  { return 210; }
-static int ctx_menu_height() { return 5 * ctx_item_height() + 8; }
-
-static void drawContextMenu() {
-    if (!g_ctx.active) return;
-    const char** items = (g_lang == LANG_RU) ? CTX_ITEMS_RU : CTX_ITEMS_EN;
-    int itemH = ctx_item_height();
-    int menuW = ctx_menu_width();
-    int menuH = ctx_menu_height();
-
-    SDL_SetRenderDrawBlendMode(g_renderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(g_renderer, 20, 24, 34, 250);
-    SDL_Rect bg = { g_ctx.x, g_ctx.y, menuW, menuH };
-    SDL_RenderFillRect(g_renderer, &bg);
-    SDL_SetRenderDrawColor(g_renderer, 80, 120, 180, 255);
-    SDL_RenderDrawRect(g_renderer, &bg);
-
-    SDL_Color txt = { 220, 230, 250, 255 };
-    for (int i = 0; i < 5; ++i) {
-        int iy = g_ctx.y + 4 + i * itemH;
-        if (i == g_ctx.selected) {
-            SDL_SetRenderDrawColor(g_renderer, 50, 80, 140, 255);
-            SDL_Rect sel = { g_ctx.x + 2, iy, menuW - 4, itemH };
-            SDL_RenderFillRect(g_renderer, &sel);
-        }
-        renderText(g_renderer, g_ui_font, items[i], g_ctx.x + 12, iy + 4, txt);
-    }
-    SDL_SetRenderDrawBlendMode(g_renderer, SDL_BLENDMODE_NONE);
-}
-static void ctx_execute_item(int item, bool& running_out) {
-    running_out = false;
-    switch (item) {
-        case 0: {
-            std::string path = openFileDialogW();
-            if (!path.empty()) loadFont(path);
-            break;
-        }
-        case 1:
-            if (g_font.surf) {
-                std::string path = saveFileDialogW("png", L"Indexed PNG\0*.png\0All Files\0*.*\0\0");
-                if (!path.empty()) {
-                    if (savePNG_Indexed(g_font.surf, path.c_str())) log_msg("Saved PNG: " + path);
-                }
-            }
-            break;
-        case 2:
-            if (g_font.surf) {
-                std::string path = saveFileDialogW("gif", L"GIF image\0*.gif\0All Files\0*.*\0\0");
-                if (!path.empty()) {
-                    if (saveGIF(g_font.surf, path.c_str())) log_msg("Saved GIF: " + path);
-                    else log_msg(std::string("GIF save FAILED: ") + SDL_GetError());
-                }
-            }
-            break;
-        case 3:
-            if (g_font.surf) {
-                std::string path = saveFileDialogW("pcx", L"PCX image\0*.pcx\0All Files\0*.*\0\0");
-                if (!path.empty()) {
-                    if (savePCX(g_font.surf, path.c_str())) log_msg("Saved PCX: " + path);
-                }
-            }
-            break;
-        case 4: running_out = true; break;
-    }
-}
-
-// ==================================================================
-//                     ТЕКСТОВЫЙ ДИАЛОГ
-// ==================================================================
-static void drawTextDialog() {
-    int w = 0, h = 0;
-    SDL_GetRendererOutputSize(g_renderer, &w, &h);
-    SDL_SetRenderDrawBlendMode(g_renderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 170);
-    SDL_Rect full = { 0, 0, w, h };
-    SDL_RenderFillRect(g_renderer, &full);
-
-    int dw = std::min(w - 80, 800);
-    int dh = 420;
-    int dx = (w - dw) / 2;
-    int dy = (h - dh) / 2;
-
-    SDL_SetRenderDrawColor(g_renderer, 22, 26, 40, 250);
-    SDL_Rect dlg = { dx, dy, dw, dh };
-    SDL_RenderFillRect(g_renderer, &dlg);
-    SDL_SetRenderDrawColor(g_renderer, 40, 60, 100, 255);
-    SDL_Rect hdr = { dx, dy, dw, 32 };
-    SDL_RenderFillRect(g_renderer, &hdr);
-    renderText(g_renderer, g_ui_font, S().text_dialog_title, dx + 12, dy + 8, SDL_Color{180,210,255,255});
-
-    SDL_SetRenderDrawColor(g_renderer, 10, 12, 20, 255);
-    SDL_Rect box = { dx + 16, dy + 48, dw - 32, 80 };
-    SDL_RenderFillRect(g_renderer, &box);
-    SDL_SetRenderDrawColor(g_renderer, 80, 120, 190, 255);
-    SDL_RenderDrawRect(g_renderer, &box);
-
-    SDL_Color txt = { 240, 245, 255, 255 };
-    int tx = box.x + 8;
-    int ty = box.y + 6;
-    int lineH = g_ui_font ? TTF_FontLineSkip(g_ui_font) : 16;
-    std::string line;
-    for (size_t i = 0; i <= g_text_dlg.text.size(); ) {
-        if (i == g_text_dlg.text.size() || g_text_dlg.text[i] == '\n') {
-            renderText(g_renderer, g_ui_font, line, tx, ty, txt);
-            ty += lineH;
-            line.clear();
-            if (i < g_text_dlg.text.size()) ++i;
-            else break;
-        } else { line.push_back(g_text_dlg.text[i]); ++i; }
-    }
-
-    SDL_Rect pvBox = { dx + 16, dy + 144, dw - 32, 220 };
-    SDL_SetRenderDrawColor(g_renderer, 8, 10, 16, 255);
-    SDL_RenderFillRect(g_renderer, &pvBox);
-    SDL_SetRenderDrawColor(g_renderer, 60, 80, 120, 255);
-    SDL_RenderDrawRect(g_renderer, &pvBox);
-    renderText(g_renderer, g_ui_font, "LIVE PREVIEW:", pvBox.x + 6, pvBox.y + 4, SDL_Color{140,180,240,255});
-
-    if (g_font.tex && g_font.surf) {
-        int cw = g_font.charW, ch = g_font.charH;
-        int cols = g_font.surf->w / cw;
-        int rows = g_font.surf->h / ch;
-        int scale = 2;
-        int lineX = pvBox.x + 8;
-        int penY  = pvBox.y + 26;
-        for (size_t i = 0; i < g_text_dlg.text.size(); ) {
-            uint32_t cp = utf8_next(g_text_dlg.text, i);
-            if (cp == '\n') { lineX = pvBox.x + 8; penY += ch * scale + 4; continue; }
-            int idx = (int)cp - g_font.firstChar;
-            if (idx >= 0 && idx < cols * rows) {
-                int col = idx % cols;
-                int row = idx / cols;
-                SDL_Rect src = { col * cw, row * ch, cw, ch };
-                SDL_Rect dst = { lineX, penY, cw * scale, ch * scale };
-                SDL_RenderCopy(g_renderer, g_font.tex, &src, &dst);
-            }
-            lineX += cw * scale + g_font.spacing * scale;
-            if (lineX > pvBox.x + pvBox.w - cw * scale) { lineX = pvBox.x + 8; penY += ch * scale + 4; }
-        }
-    }
-
-    if ((SDL_GetTicks() / 500) % 2 == 0) {
-        int curW = textWidth(g_ui_font, line);
-        SDL_SetRenderDrawColor(g_renderer, 200, 230, 255, 255);
-        SDL_Rect cursor = { tx + curW + 1, ty, 2, lineH - 2 };
-        SDL_RenderFillRect(g_renderer, &cursor);
-    }
-
-    renderText(g_renderer, g_ui_font, S().text_dialog_hint, dx + 16, dy + dh - 28, SDL_Color{140,170,210,255});
     SDL_SetRenderDrawColor(g_renderer, 120, 170, 240, 255);
     SDL_RenderDrawRect(g_renderer, &dlg);
     SDL_SetRenderDrawBlendMode(g_renderer, SDL_BLENDMODE_NONE);
@@ -896,9 +1049,12 @@ static void drawTextDialog() {
 // ==================================================================
 struct RGB { Uint8 r, g, b; };
 static const RGB PALETTE[24] = {
-    {0,0,0}, {64,64,64}, {128,128,128}, {192,192,192}, {255,255,255}, {128,0,0}, {200,0,0}, {255,80,80},
-    {255,128,0}, {255,200,0}, {255,255,0}, {128,128,0}, {0,128,0}, {0,200,80}, {0,255,128}, {0,200,200},
-    {0,128,255}, {0,0,255}, {64,0,160}, {128,0,255}, {200,0,200}, {255,0,255}, {255,0,128}, {128,64,32}
+    {0,0,0}, {64,64,64}, {128,128,128}, {192,192,192},
+    {255,255,255}, {128,0,0}, {200,0,0}, {255,80,80},
+    {255,128,0}, {255,200,0}, {255,255,0}, {128,128,0},
+    {0,128,0}, {0,200,80}, {0,255,128}, {0,200,200},
+    {0,128,255}, {0,0,255}, {64,0,160}, {128,0,255},
+    {200,0,200}, {255,0,255}, {255,0,128}, {128,64,32}
 };
 static void paintSnapshot() {
     if (!g_font.surf) return;
@@ -986,7 +1142,7 @@ static void drawPaintEditor() {
     SDL_SetRenderDrawColor(g_renderer, 30, 34, 46, 255);
     SDL_RenderClear(g_renderer);
 
-    int topH = 40, palW = 160;
+    int topH = 48, palW = 180;
     int canvasX = 0, canvasY = topH, canvasW = w - palW, canvasH = h - topH - 24;
     SDL_Rect clip = { canvasX, canvasY, canvasW, canvasH };
     SDL_RenderSetClipRect(g_renderer, &clip);
@@ -1046,38 +1202,43 @@ static void drawPaintEditor() {
     const char* toolNames[4] = { S().tool_pencil.c_str(), S().tool_eraser.c_str(),
                                  S().tool_fill.c_str(), S().tool_picker.c_str() };
     int bx = 8;
+    int bheight = 34;
+    int by = (topH - bheight) / 2;
     for (int i = 0; i < 4; ++i) {
-        int bw = textWidth(g_ui_font, toolNames[i]) + 20;
-        SDL_Rect btn = { bx, 6, bw, 28 };
+        int bw = textWidth(g_ui_font, toolNames[i]) + 24;
+        SDL_Rect btn = { bx, by, bw, bheight };
         if (i == g_paint.tool) SDL_SetRenderDrawColor(g_renderer, 60, 100, 180, 255);
-        else                   SDL_SetRenderDrawColor(g_renderer, 55, 62, 82, 255);
+        else                   SDL_SetRenderDrawColor(g_renderer, 44, 52, 72, 255);
         SDL_RenderFillRect(g_renderer, &btn);
         SDL_SetRenderDrawColor(g_renderer, 90, 120, 180, 255);
         SDL_RenderDrawRect(g_renderer, &btn);
-        renderText(g_renderer, g_ui_font, toolNames[i], bx + 10, 12, txt);
+        int tw = textWidth(g_ui_font, toolNames[i]);
+        renderText(g_renderer, g_ui_font, toolNames[i], bx + (bw - tw)/2, by + 9, txt);
         bx += bw + 6;
     }
     bx += 16;
-    renderText(g_renderer, g_ui_font, "Zoom:", bx, 12, dim);
+    renderText(g_renderer, g_ui_font, "Zoom:", bx, by + 8, dim);
     bx += textWidth(g_ui_font, "Zoom:") + 8;
-    renderText(g_renderer, g_ui_font, "x" + std::to_string(g_paint.zoom), bx, 12, txt);
+    renderText(g_renderer, g_ui_font, "x" + std::to_string(g_paint.zoom), bx, by + 8, txt);
 
     int cancelW = textWidth(g_ui_font, S().cancel) + 24;
     int applyW  = textWidth(g_ui_font, S().apply)  + 24;
     int cancelX = w - cancelW - 8;
     int applyX  = cancelX - applyW - 6;
-    SDL_Rect btnCancel = { cancelX, 6, cancelW, 28 };
-    SDL_Rect btnApply  = { applyX,  6, applyW,  28 };
+    SDL_Rect btnCancel = { cancelX, by, cancelW, bheight };
+    SDL_Rect btnApply  = { applyX,  by, applyW,  bheight };
     SDL_SetRenderDrawColor(g_renderer, 140, 60, 60, 255);
     SDL_RenderFillRect(g_renderer, &btnCancel);
     SDL_SetRenderDrawColor(g_renderer, 200, 100, 100, 255);
     SDL_RenderDrawRect(g_renderer, &btnCancel);
-    renderText(g_renderer, g_ui_font, S().cancel, cancelX + 12, 12, txt);
+    { int tw = textWidth(g_ui_font, S().cancel);
+      renderText(g_renderer, g_ui_font, S().cancel, cancelX + (cancelW - tw)/2, by + 9, txt); }
     SDL_SetRenderDrawColor(g_renderer, 60, 130, 70, 255);
     SDL_RenderFillRect(g_renderer, &btnApply);
     SDL_SetRenderDrawColor(g_renderer, 110, 210, 120, 255);
     SDL_RenderDrawRect(g_renderer, &btnApply);
-    renderText(g_renderer, g_ui_font, S().apply, applyX + 12, 12, txt);
+    { int tw = textWidth(g_ui_font, S().apply);
+      renderText(g_renderer, g_ui_font, S().apply, applyX + (applyW - tw)/2, by + 9, txt); }
 
     int palX = w - palW;
     SDL_SetRenderDrawColor(g_renderer, 26, 30, 42, 255);
@@ -1086,46 +1247,53 @@ static void drawPaintEditor() {
     SDL_SetRenderDrawColor(g_renderer, 60, 80, 120, 255);
     SDL_RenderDrawLine(g_renderer, palX, topH, palX, h);
 
-    int swatch = 28, gap = 6;
-    int px0 = palX + (palW - (8 * swatch + 7 * gap)) / 2;
-    int py0 = topH + 16;
+    int swatch = 32, gap = 8;
+    int px0 = palX + (palW - (4 * swatch + 3 * gap)) / 2;
+    int py0 = topH + 20;
     for (int i = 0; i < 24; ++i) {
-        int col = i % 8, row = i / 8;
+        int col = i % 4, row = i / 4;
         SDL_Rect rc = { px0 + col * (swatch + gap), py0 + row * (swatch + gap), swatch, swatch };
         SDL_SetRenderDrawColor(g_renderer, PALETTE[i].r, PALETTE[i].g, PALETTE[i].b, 255);
         SDL_RenderFillRect(g_renderer, &rc);
         bool is_cur = g_paint.color[0] == PALETTE[i].r && g_paint.color[1] == PALETTE[i].g &&
                       g_paint.color[2] == PALETTE[i].b && g_paint.color[3] == 255;
-        SDL_SetRenderDrawColor(g_renderer, is_cur?255:80, is_cur?220:80, is_cur?100:80, 255);
-        SDL_Rect border = { rc.x - 1, rc.y - 1, rc.w + 2, rc.h + 2 };
-        SDL_RenderDrawRect(g_renderer, &border);
+        if (is_cur) {
+            SDL_SetRenderDrawColor(g_renderer, 255, 220, 80, 255);
+            SDL_Rect border = { rc.x - 2, rc.y - 2, rc.w + 4, rc.h + 4 };
+            SDL_RenderDrawRect(g_renderer, &border);
+        }
     }
-    int tyP = py0 + 3 * (swatch + gap) + 6;
+    int tyP = py0 + 6 * (swatch + gap) + 8;
     SDL_Rect transp = { palX + 12, tyP, palW - 24, 32 };
     bool is_tr = g_paint.color[3] == 0;
     SDL_SetRenderDrawColor(g_renderer, is_tr?70:40, is_tr?110:50, is_tr?190:70, 255);
     SDL_RenderFillRect(g_renderer, &transp);
     SDL_SetRenderDrawColor(g_renderer, 120, 160, 220, 255);
     SDL_RenderDrawRect(g_renderer, &transp);
-    renderText(g_renderer, g_ui_font, S().transparent, palX + 20, tyP + 8, txt);
-    SDL_Rect undoBtn = { palX + 12, tyP + 40, palW - 24, 28 };
+    { int tw = textWidth(g_ui_font, S().transparent);
+      renderText(g_renderer, g_ui_font, S().transparent, palX + (palW - tw)/2, tyP + 8, txt); }
+    SDL_Rect undoBtn = { palX + 12, tyP + 40, palW - 24, 32 };
     SDL_SetRenderDrawColor(g_renderer, 55, 62, 82, 255);
     SDL_RenderFillRect(g_renderer, &undoBtn);
     SDL_SetRenderDrawColor(g_renderer, 120, 160, 220, 255);
     SDL_RenderDrawRect(g_renderer, &undoBtn);
-    renderText(g_renderer, g_ui_font, S().undo, palX + 20, tyP + 44, txt);
+    { int tw = textWidth(g_ui_font, S().undo);
+      renderText(g_renderer, g_ui_font, S().undo, palX + (palW - tw)/2, tyP + 48, txt); }
 
-    SDL_SetRenderDrawColor(g_renderer, 26, 30, 42, 255);
+    // Нижняя панель Paint
+    SDL_SetRenderDrawColor(g_renderer, 20, 24, 34, 255);
     SDL_Rect bot = { 0, h - 24, w, 24 };
     SDL_RenderFillRect(g_renderer, &bot);
-    renderText(g_renderer, g_ui_font, S().paint_hint, 8, h - 20, dim);
+    renderText(g_renderer, g_ui_font, S().paint_hint, 10, h - 20, dim);
 }
+
+// ==================================================================
+//                     ДИСПЕТЧЕР
+// ==================================================================
 static void drawUI() {
-    if (g_paint.active)         drawPaintEditor();
-    else if (g_text_dlg.active) { drawNormalUI(); drawTextDialog(); }
-    else                        drawNormalUI();
-    if (g_ctx.active)           drawContextMenu();
-    if (g_help.active)          drawHelp();
+    if (g_paint.active) drawPaintEditor();
+    else                drawMainUI();
+    if (g_help.active)  drawHelp();
     SDL_RenderPresent(g_renderer);
 }
 
@@ -1134,8 +1302,8 @@ static void drawUI() {
 // ==================================================================
 static TTF_Font* loadUIFont(int size) {
     const char* candidates[] = {
-        "C:/Windows/Fonts/consola.ttf",
         "C:/Windows/Fonts/segoeui.ttf",
+        "C:/Windows/Fonts/consola.ttf",
         "C:/Windows/Fonts/arial.ttf",
     };
     for (const char* p : candidates) {
@@ -1160,8 +1328,8 @@ static void enterPaint() {
     g_paint.undo_stack.clear();
     int w, h;
     SDL_GetRendererOutputSize(g_renderer, &w, &h);
-    int availW = w - 160 - 40;
-    int availH = h - 40 - 24 - 40;
+    int availW = w - 180 - 40;
+    int availH = h - 48 - 24 - 40;
     int zx = availW / std::max(1, g_font.surf->w);
     int zy = availH / std::max(1, g_font.surf->h);
     g_paint.zoom = std::max(1, std::min(zx, zy));
@@ -1192,6 +1360,138 @@ static void cancelPaint() {
 }
 
 // ==================================================================
+//                     КЛИКИ ПО UI
+// ==================================================================
+static bool handleMainUIClick(int mx, int my) {
+    int w = 0, h = 0;
+    SDL_GetRendererOutputSize(g_renderer, &w, &h);
+
+    SDL_Color btnBg = { 44, 52, 72, 255 };
+
+    int bx = 8;
+    int bh = 34;
+    int by = (TOOLBAR_H - bh) / 2;
+
+    // Open
+    int bw = textWidth(g_ui_font, S().btn_open) + 24;
+    if (point_in({ bx, by, bw, bh }, mx, my)) {
+        std::string p = openFileDialogW();
+        if (!p.empty()) loadFont(p);
+        return true;
+    }
+    bx += bw + 6;
+
+    // Save PNG
+    bw = textWidth(g_ui_font, S().btn_save_png) + 24;
+    if (point_in({ bx, by, bw, bh }, mx, my)) {
+        if (g_font.surf) {
+            std::string p = saveFileDialogW("png", L"Indexed PNG\0*.png\0All Files\0*.*\0\0");
+            if (!p.empty() && savePNG_Indexed(g_font.surf, p.c_str())) log_msg("Saved PNG: " + p);
+        }
+        return true;
+    }
+    bx += bw + 4;
+
+    // Save GIF
+    bw = textWidth(g_ui_font, S().btn_save_gif) + 24;
+    if (point_in({ bx, by, bw, bh }, mx, my)) {
+        if (g_font.surf) {
+            std::string p = saveFileDialogW("gif", L"GIF image\0*.gif\0All Files\0*.*\0\0");
+            if (!p.empty() && saveGIF(g_font.surf, p.c_str())) log_msg("Saved GIF: " + p);
+        }
+        return true;
+    }
+    bx += bw + 4;
+
+    // Save PCX
+    bw = textWidth(g_ui_font, S().btn_save_pcx) + 24;
+    if (point_in({ bx, by, bw, bh }, mx, my)) {
+        if (g_font.surf) {
+            std::string p = saveFileDialogW("pcx", L"PCX image\0*.pcx\0All Files\0*.*\0\0");
+            if (!p.empty() && savePCX(g_font.surf, p.c_str())) log_msg("Saved PCX: " + p);
+        }
+        return true;
+    }
+    bx += bw + 16 + 12;
+
+    // Paint
+    bw = textWidth(g_ui_font, S().btn_paint) + 24;
+    if (point_in({ bx, by, bw, bh }, mx, my)) { enterPaint(); return true; }
+    bx += bw + 6;
+
+    // Help
+    bw = textWidth(g_ui_font, S().btn_help) + 24;
+    if (point_in({ bx, by, bw, bh }, mx, my)) { g_help.active = true; return true; }
+
+    // Lang
+    int langW = textWidth(g_ui_font, S().btn_lang) + 24;
+    if (point_in({ w - langW - 8, by, langW, bh }, mx, my)) {
+        g_lang = (g_lang == LANG_EN) ? LANG_RU : LANG_EN;
+        if (g_window) SDL_SetWindowTitle(g_window, S().title.c_str());
+        return true;
+    }
+
+    // Sidebar: rows +/-
+    int sbX = w - SIDEBAR_W;
+    if (mx >= sbX) {
+        int rowY = TOOLBAR_H + 46;
+        int rowH = 42;
+        struct Tgt { int* val; int minv; int maxv; bool recalc; };
+        Tgt tgts[5] = {
+            { &g_font.charW, 1, 64, true },
+            { &g_font.charH, 1, 64, true },
+            { &g_font.firstChar, 0, 255, false },
+            { &g_font.spacing, -10, 32, false },
+            { &g_font.renderScale, 1, 8, false },
+        };
+        for (int i = 0; i < 5; ++i) {
+            int rx = sbX + 16;
+            int rw = SIDEBAR_W - 32;
+            int minusX = rx;
+            int plusX  = rx + rw - 30;
+            int btnY   = rowY + 20;
+            int btnS   = 26;
+            if (point_in({ minusX, btnY, btnS, btnS }, mx, my)) {
+                *tgts[i].val = std::max(tgts[i].minv, *tgts[i].val - 1);
+                if (tgts[i].recalc) refreshCharCount();
+                return true;
+            }
+            if (point_in({ plusX, btnY, btnS, btnS }, mx, my)) {
+                *tgts[i].val = std::min(tgts[i].maxv, *tgts[i].val + 1);
+                if (tgts[i].recalc) refreshCharCount();
+                return true;
+            }
+            rowY += rowH;
+        }
+        // Reset
+        int resetY = rowY + 6;
+        if (point_in({ sbX + 16, resetY, SIDEBAR_W - 32, 32 }, mx, my)) {
+            g_font.charW = 8; g_font.charH = 8;
+            g_font.firstChar = 0; g_font.spacing = 0;
+            g_font.renderScale = 3;
+            refreshCharCount();
+            return true;
+        }
+        return true;
+    }
+
+    // Клик по области предпросмотра: включить ввод
+    int pvY = h - STATUSBAR_H - PREVIEW_H;
+    if (my >= pvY && my < h - STATUSBAR_H) {
+        int inputX = 16;
+        int inputY = pvY + 34;
+        int inputW = w - SIDEBAR_W - 32;
+        if (point_in({ inputX, inputY, inputW, INPUT_H }, mx, my)) {
+            g_typing = true;
+            SDL_StartTextInput();
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// ==================================================================
 //                     MAIN
 // ==================================================================
 int main(int argc, char** argv) {
@@ -1203,26 +1503,21 @@ int main(int argc, char** argv) {
     TTF_Init();
 
     g_window = SDL_CreateWindow(S().title.c_str(),
-        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1100, 700,
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1200, 760,
         SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     if (!g_window) { log_msg("CreateWindow failed"); return 1; }
+    SDL_SetWindowMinimumSize(g_window, 800, 600);
     g_renderer = SDL_CreateRenderer(g_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!g_renderer) { log_msg("CreateRenderer failed"); return 1; }
     SDL_SetRenderDrawBlendMode(g_renderer, SDL_BLENDMODE_BLEND);
 
-    g_ui_font = loadUIFont(14);
-    g_ui_font_bold = loadUIFont(16);
-    // Иконка окна из icon.png
     {
         SDL_Surface* icon = IMG_Load("icon.png");
-        if (icon) {
-            SDL_SetWindowIcon(g_window, icon);
-            SDL_FreeSurface(icon);
-            log_msg("Window icon set from icon.png");
-        } else {
-            log_msg(std::string("icon.png not loaded: ") + IMG_GetError());
-        }
+        if (icon) { SDL_SetWindowIcon(g_window, icon); SDL_FreeSurface(icon); log_msg("Icon loaded"); }
     }
+
+    g_ui_font = loadUIFont(14);
+    g_ui_font_bold = loadUIFont(16);
 
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
     SDL_EventState(SDL_TEXTINPUT, SDL_ENABLE);
@@ -1243,65 +1538,20 @@ int main(int argc, char** argv) {
                 }
                 else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
                     int w, h; SDL_GetRendererOutputSize(g_renderer, &w, &h);
-                    int dw = std::min(w - 80, 820);
-                    int dh = std::min(h - 80, 560);
+                    int dw = std::min(w - 60, 900);
+                    int dh = std::min(h - 60, 620);
                     int dx = (w - dw) / 2;
                     int dy = (h - dh) / 2;
-                    int btnW = 180, btnH = 32;
+                    int btnW = 200, btnH = 34;
                     int btnX = dx + (dw - btnW) / 2;
-                    int btnY = dy + dh - 50;
-                    if (e.button.x >= btnX && e.button.x < btnX + btnW &&
-                        e.button.y >= btnY && e.button.y < btnY + btnH) {
+                    int btnY = dy + dh - 48;
+                    if (point_in({ btnX, btnY, btnW, btnH }, e.button.x, e.button.y)) {
                         g_help.active = false;
                     } else if (e.button.x < dx || e.button.x > dx + dw ||
                                e.button.y < dy || e.button.y > dy + dh) {
                         g_help.active = false;
                     }
                 }
-                continue;
-            }
-
-            // ---- CONTEXT MENU ----
-            if (g_ctx.active) {
-                if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
-                    int my = e.button.y - g_ctx.y;
-                    int item = (my - 4) / ctx_item_height();
-                    if (item >= 0 && item < 5) {
-                        g_ctx.active = false;
-                        bool quit = false;
-                        ctx_execute_item(item, quit);
-                        if (quit) running = false;
-                    } else g_ctx.active = false;
-                }
-                else if (e.type == SDL_MOUSEMOTION) {
-                    int my = e.motion.y - g_ctx.y;
-                    int item = (my - 4) / ctx_item_height();
-                    g_ctx.selected = (item >= 0 && item < 5) ? item : -1;
-                }
-                else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) {
-                    g_ctx.active = false;
-                }
-                continue;
-            }
-
-            // ---- TEXT DIALOG ----
-            if (g_text_dlg.active) {
-                if (e.type == SDL_KEYDOWN) {
-                    SDL_Keycode k = e.key.keysym.sym;
-                    SDL_Keymod mod = (SDL_Keymod)e.key.keysym.mod;
-                    if (k == SDLK_ESCAPE) { g_text_dlg.active = false; SDL_StopTextInput(); }
-                    else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
-                        if (mod & KMOD_SHIFT) g_text_dlg.text += '\n';
-                        else {
-                            g_test_text = g_text_dlg.text;
-                            g_text_dlg.active = false;
-                            SDL_StopTextInput();
-                            log_msg("Test text: " + g_test_text);
-                        }
-                    }
-                    else if (k == SDLK_BACKSPACE) utf8_pop_back(g_text_dlg.text);
-                }
-                else if (e.type == SDL_TEXTINPUT) g_text_dlg.text += e.text.text;
                 continue;
             }
 
@@ -1327,23 +1577,19 @@ int main(int argc, char** argv) {
                 }
                 else if (e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEMOTION) {
                     int w, h; SDL_GetRendererOutputSize(g_renderer, &w, &h);
-                    int palW = 160;
-                    int canvasX = 0, canvasY = 40, canvasW = w - palW, canvasH = h - 40 - 24;
+                    int palW = 180;
+                    int canvasX = 0, canvasY = 48, canvasW = w - palW, canvasH = h - 48 - 24;
                     int mx = e.type == SDL_MOUSEMOTION ? e.motion.x : e.button.x;
                     int my = e.type == SDL_MOUSEMOTION ? e.motion.y : e.button.y;
 
-                    if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_RIGHT) {
-                        g_ctx.active = true; g_ctx.x = mx; g_ctx.y = my; g_ctx.selected = -1;
-                        continue;
-                    }
-
-                    if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT && my < 40) {
+                    if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT && my < 48) {
                         const char* toolNames[4] = { S().tool_pencil.c_str(), S().tool_eraser.c_str(),
                                                      S().tool_fill.c_str(), S().tool_picker.c_str() };
                         int bx = 8; bool handled = false;
+                        int bh = 34, by = (48 - bh) / 2;
                         for (int i = 0; i < 4; ++i) {
-                            int bw = textWidth(g_ui_font, toolNames[i]) + 20;
-                            if (mx >= bx && mx < bx + bw) { g_paint.tool = i; handled = true; break; }
+                            int bw = textWidth(g_ui_font, toolNames[i]) + 24;
+                            if (point_in({ bx, by, bw, bh }, mx, my)) { g_paint.tool = i; handled = true; break; }
                             bx += bw + 6;
                         }
                         if (!handled) {
@@ -1351,21 +1597,21 @@ int main(int argc, char** argv) {
                             int applyW  = textWidth(g_ui_font, S().apply)  + 24;
                             int cancelX = w - cancelW - 8;
                             int applyX  = cancelX - applyW - 6;
-                            if (mx >= cancelX && mx < cancelX + cancelW) cancelPaint();
-                            else if (mx >= applyX && mx < applyX + applyW) applyPaint();
+                            if (point_in({ cancelX, by, cancelW, bh }, mx, my)) { cancelPaint(); handled = true; }
+                            else if (point_in({ applyX, by, applyW, bh }, mx, my)) { applyPaint(); handled = true; }
                         }
                     }
                     else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT &&
-                             mx >= w - palW && my >= 40) {
-                        int swatch = 28, gap = 6;
-                        int px0 = (w - palW) + (palW - (8 * swatch + 7 * gap)) / 2;
-                        int py0 = 40 + 16;
+                             mx >= w - palW && my >= 48) {
+                        int swatch = 32, gap = 8;
+                        int px0 = (w - palW) + (palW - (4 * swatch + 3 * gap)) / 2;
+                        int py0 = 48 + 20;
                         bool handled = false;
                         for (int i = 0; i < 24; ++i) {
-                            int col = i % 8, row = i / 8;
+                            int col = i % 4, row = i / 4;
                             int sx = px0 + col * (swatch + gap);
                             int sy = py0 + row * (swatch + gap);
-                            if (mx >= sx && mx < sx + swatch && my >= sy && my < sy + swatch) {
+                            if (point_in({ sx, sy, swatch, swatch }, mx, my)) {
                                 g_paint.color[0] = PALETTE[i].r;
                                 g_paint.color[1] = PALETTE[i].g;
                                 g_paint.color[2] = PALETTE[i].b;
@@ -1374,13 +1620,13 @@ int main(int argc, char** argv) {
                             }
                         }
                         if (!handled) {
-                            int tyP = py0 + 3 * (swatch + gap) + 6;
-                            SDL_Rect transp = { (w - palW) + 12, tyP, palW - 24, 32 };
-                            if (mx >= transp.x && mx < transp.x + transp.w &&
-                                my >= transp.y && my < transp.y + transp.h) g_paint.color[3] = 0;
-                            SDL_Rect undoBtn = { (w - palW) + 12, tyP + 40, palW - 24, 28 };
-                            if (mx >= undoBtn.x && mx < undoBtn.x + undoBtn.w &&
-                                my >= undoBtn.y && my < undoBtn.y + undoBtn.h) paintUndo();
+                            int tyP = py0 + 6 * (swatch + gap) + 8;
+                            if (point_in({ (w - palW) + 12, tyP, palW - 24, 32 }, mx, my)) {
+                                g_paint.color[3] = 0;
+                            }
+                            if (point_in({ (w - palW) + 12, tyP + 40, palW - 24, 32 }, mx, my)) {
+                                paintUndo();
+                            }
                         }
                     }
                     else {
@@ -1436,48 +1682,72 @@ int main(int argc, char** argv) {
                 continue;
             }
 
-            // ---- NORMAL MODE ----
+            // ---- MAIN UI ----
             if (e.type == SDL_DROPFILE) {
                 std::string path = e.drop.file ? e.drop.file : "";
                 if (e.drop.file) SDL_free(e.drop.file);
                 log_msg("DnD: " + path);
                 loadFont(path);
             }
-            else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_RIGHT) {
-                g_ctx.active = true;
-                g_ctx.x = e.button.x;
-                g_ctx.y = e.button.y;
-                g_ctx.selected = -1;
+            else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
+                // Клик по листу фокусирует его и снимает фокус с текстового поля?
+                // Оставляем фокус на поле ввода до нажатия Escape
+                handleMainUIClick(e.button.x, e.button.y);
+            }
+            else if (e.type == SDL_MOUSEWHEEL) {
+                int w, h; SDL_GetRendererOutputSize(g_renderer, &w, &h);
+                int mx, my; SDL_GetMouseState(&mx, &my);
+                int sheetH = h - TOOLBAR_H - PREVIEW_H - STATUSBAR_H;
+                if (mx < w - SIDEBAR_W && my >= TOOLBAR_H && my < TOOLBAR_H + sheetH) {
+                    if (e.wheel.y != 0) {
+                        if (SDL_GetModState() & KMOD_SHIFT) {
+                            g_scroll_x -= e.wheel.y * 32;
+                        } else {
+                            g_scroll_y -= e.wheel.y * 32;
+                        }
+                    }
+                }
+            }
+            else if (e.type == SDL_TEXTINPUT) {
+                if (g_typing) g_test_text += e.text.text;
             }
             else if (e.type == SDL_KEYDOWN) {
                 SDL_Keycode k = e.key.keysym.sym;
                 SDL_Keymod mod = (SDL_Keymod)e.key.keysym.mod;
 
+                // Если идёт ввод текста — обрабатываем только ввод
+                if (g_typing) {
+                    if (k == SDLK_ESCAPE) { g_typing = false; SDL_StopTextInput(); }
+                    else if (k == SDLK_BACKSPACE) utf8_pop_back(g_test_text);
+                    else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+                        g_typing = false;
+                        SDL_StopTextInput();
+                    }
+                    continue;
+                }
+
                 if (k == SDLK_ESCAPE) running = false;
                 else if (k == SDLK_h) { g_help.active = true; }
+                else if (k == SDLK_t) {
+                    g_typing = true;
+                    SDL_StartTextInput();
+                }
                 else if (k == SDLK_o && (mod & KMOD_CTRL)) {
                     std::string path = openFileDialogW();
                     if (!path.empty()) loadFont(path);
                 }
                 else if (k == SDLK_s && (mod & KMOD_CTRL)) {
-                    if (!g_font.surf) { log_msg("Save: no font"); }
-                    else {
+                    if (g_font.surf) {
                         std::string path;
                         if (mod & KMOD_SHIFT) {
                             path = saveFileDialogW("gif", L"GIF image\0*.gif\0All Files\0*.*\0\0");
-                            if (!path.empty()) {
-                                if (saveGIF(g_font.surf, path.c_str())) log_msg("Saved GIF: " + path);
-                            }
+                            if (!path.empty()) saveGIF(g_font.surf, path.c_str());
                         } else if (mod & KMOD_ALT) {
                             path = saveFileDialogW("pcx", L"PCX image\0*.pcx\0All Files\0*.*\0\0");
-                            if (!path.empty()) {
-                                if (savePCX(g_font.surf, path.c_str())) log_msg("Saved PCX: " + path);
-                            }
+                            if (!path.empty()) savePCX(g_font.surf, path.c_str());
                         } else {
                             path = saveFileDialogW("png", L"Indexed PNG\0*.png\0All Files\0*.*\0\0");
-                            if (!path.empty()) {
-                                if (savePNG_Indexed(g_font.surf, path.c_str())) log_msg("Saved PNG: " + path);
-                            }
+                            if (!path.empty()) savePNG_Indexed(g_font.surf, path.c_str());
                         }
                     }
                 }
@@ -1485,22 +1755,17 @@ int main(int argc, char** argv) {
                     g_lang = (g_lang == LANG_EN) ? LANG_RU : LANG_EN;
                     if (g_window) SDL_SetWindowTitle(g_window, S().title.c_str());
                 }
-                else if (k == SDLK_t) {
-                    g_text_dlg.active = true;
-                    g_text_dlg.text = g_test_text;
-                    SDL_StartTextInput();
-                }
                 else if (k == SDLK_e) enterPaint();
                 else if (k == SDLK_F1)  { g_font.charW = std::max(1, g_font.charW - 1); refreshCharCount(); }
-                else if (k == SDLK_F2)  { g_font.charW = std::min(128, g_font.charW + 1); refreshCharCount(); }
+                else if (k == SDLK_F2)  { g_font.charW = std::min(64, g_font.charW + 1); refreshCharCount(); }
                 else if (k == SDLK_F3)  { g_font.charH = std::max(1, g_font.charH - 1); refreshCharCount(); }
-                else if (k == SDLK_F4)  { g_font.charH = std::min(128, g_font.charH + 1); refreshCharCount(); }
+                else if (k == SDLK_F4)  { g_font.charH = std::min(64, g_font.charH + 1); refreshCharCount(); }
                 else if (k == SDLK_F5)  g_font.firstChar = std::max(0, g_font.firstChar - 1);
-                else if (k == SDLK_F6)  g_font.firstChar = std::min(0x10FFFF, g_font.firstChar + 1);
+                else if (k == SDLK_F6)  g_font.firstChar = std::min(255, g_font.firstChar + 1);
                 else if (k == SDLK_F7)  g_font.renderScale = std::max(1, g_font.renderScale - 1);
-                else if (k == SDLK_F8)  g_font.renderScale = std::min(16, g_font.renderScale + 1);
+                else if (k == SDLK_F8)  g_font.renderScale = std::min(8, g_font.renderScale + 1);
                 else if (k == SDLK_F9)  g_font.spacing = std::max(-10, g_font.spacing - 1);
-                else if (k == SDLK_F10) g_font.spacing = std::min(64, g_font.spacing + 1);
+                else if (k == SDLK_F10) g_font.spacing = std::min(32, g_font.spacing + 1);
             }
         }
         drawUI();
