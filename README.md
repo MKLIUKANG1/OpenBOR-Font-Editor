@@ -1,3 +1,4 @@
+![OpenBOR Font Editor](icon.png)
 RU
 # OpenBOR Font Editor
 
